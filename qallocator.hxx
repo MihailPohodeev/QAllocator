@@ -4,10 +4,10 @@
 #include <iostream>
 #include <mutex>
 
-#include "setup.h"
+#include "setup.hxx"
 
-#define DEFAULT_DATA_BUFFER_SIZE 512 // bytes
-#define DEFAULT_TREE_TABLE_SIZE  256 // bytes
+#define DEFAULT_DATA_BUFFER_SIZE 1024 	// bytes
+#define DEFAULT_TREE_TABLE_SIZE  512 	// bytes
 
 namespace Q
 {
@@ -89,7 +89,12 @@ namespace Q
 		
 		// after adding treenode in tree -> balance tree, starts param.
 		// parameter1 - treenode - start for balancing.
-		void balance_tree(struct treenode*);
+		void balance_tree_insertion(struct treenode*);
+
+		struct treenode* grandparent(struct treenode*);		// find grandparent of treenode.
+		struct treenode* uncle(struct treenode*);		// find uncle of treenode.
+		void rotate_left(struct treenode*);			// rotate left of node.
+		void rotate_right(struct treenode*);			// rotate right of node.
 
 		// resize buffer
 		// parameter1 - pointer of buffer's start.
