@@ -77,6 +77,13 @@ void Q::QAllocator::rotate_right(struct Q::QAllocator::treenode* node)
 	pivot->right = node;
 }
 
+// get aligned address
+void* align_of_address(void* address, U8 align)
+{
+	integer_value_of_pointer addr = (integer_value_of_pointer)address;
+	return (void*)(addr + (align - (addr & (align - 1))));
+}
+
 Q::QAllocator::QAllocator(U32 dataCapacity, U32 treeCapacity) : _dataCapacity(dataCapacity), _treeCapacity(treeCapacity)
 {
 	initBuffers(dataCapacity, treeCapacity);
@@ -97,7 +104,7 @@ void Q::QAllocator::initBuffers(U32 dataCapacity, U32 treeCapacity)
 	_currentTreeTablePosition = _treeBuffer;
 
 	// align pointer by 8 bytes.
-	_currentTreeTablePosition = (void*)((integer_value_of_pointer)_currentTreeTablePosition & ~7);
+	_currentTreeTablePosition = align_of_address(_currentTreeTablePosition, 8);
 	nil = allocate_treenode_in_buffer();
 
 	// set nil-treenode.
@@ -125,7 +132,58 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 	//     here pointer out of TREE-TABLE --------- 
 	if (((integer_value_of_pointer)_currentTreeTablePosition + sizeof(struct treenode)) > \
 			((integer_value_of_pointer)_treeBuffer + _treeCapacity))
-		return nullptr;
+	{
+		// ~~~Rebuilding RBTree from old buffer~~~
+		// allocate new x2 buffer.
+		U8* newBuff = (U8*)malloc(_treeCapacity * 2);
+		if (newBuff == nullptr)
+			return nullptr;
+		// swap buffers.
+		U8* temp = newBuff;
+		newBuff = _treeBuffer;
+		_treeBuffer = temp;
+		
+		// sturcture of variables below.
+		//	 ______________________________       __________________
+		//	|aligned  |node1 |node2 |node3 | ... |nodeN-1 |nodeN |  |
+		//	|_________|______|______|______|     |________|______|__|
+		//      A         A                                          A  A
+		//      |  	  |					     |  |
+		//  buffer start  |______ _oldBufferStart 		     |  |
+		//  		    					     |  |
+		//   		  	_oldCurrentTreeTablePosition_________|  |
+		//							 	|
+		//						buffer end _____|
+		//							 	
+		void* _oldCurrentTreeTablePosition = _currentTreeTablePosition;
+		void* _oldBufferStart = (void*)((integer_value_of_pointer)nil + sizeof(struct treenode));
+		_currentTreeTablePosition = align_of_address(_treeBuffer, 8);
+		//return nil in buffer.
+		nil = allocate_treenode_in_buffer();
+		nil->parent     = nil;
+		nil->descriptor = 0;
+		nil->size       = 0;
+		nil->isRed      = false;
+		nil->segment    = nullptr;
+		nil->usefulData = nullptr;
+		nil->left       = nil;
+		nil->right      = nil;
+		
+		// get descriptors from old buffer -> build new tree -> in the corresponding treenode put values from old treenode.
+		for ( integer_value_of_pointer i = (integer_value_of_pointer)_oldBufferStart; \
+			i < (integer_value_of_pointer)_oldCurrentTreeTablePosition; i += sizeof(struct treenode) )
+		{
+			struct treenode* oldNode = (struct treenode*)i;
+			struct treenode* newNode = add_node_in_tree(oldNode->descriptor);
+			newNode->size 		 = oldNode->size;
+			newNode->segment 	 = oldNode->segment;
+			newNode->usefulData	 = oldNode->usefulData;
+		}
+		
+		// change capacity of TREE-TABLE.
+		_treeCapacity *= 2;
+		free(newBuff);
+	}
 	struct treenode* result = (struct treenode*)_currentTreeTablePosition;
 	_currentTreeTablePosition = (void*)((integer_value_of_pointer)_currentTreeTablePosition + sizeof(struct treenode));
 	return result;
@@ -134,7 +192,11 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 // add treenode with descriptor from parameter to tree and balance tree.
 struct Q::QAllocator::treenode* Q::QAllocator::add_node_in_tree( U32 descriptor )
 {
+	std::cout << "start !\n";
 	struct treenode* node = allocate_treenode_in_buffer();
+	std::cout << _treeCapacity << '\n';
+	if (!node)
+		return nullptr;
 	node->descriptor = descriptor;
 	node->left 	 = nil;
 	node->right	 = nil;
@@ -230,14 +292,10 @@ void Q::QAllocator::balance_tree_insertion(struct treenode* node)
 U32 Q::QAllocator::allocate( U32 size, U8 align)
 {
 	struct treenode* node = add_node_in_tree(_currentDescriptor);
+	if (!node)
+		return 0;
 	node->size = size;
 
-	if (node == nullptr)
-	{
-		// TODO
-		// resize TREE-TABLE
-	}
-	
 	_currentDescriptor++;
 
 	return node->descriptor;
@@ -247,13 +305,13 @@ U32 Q::QAllocator::allocate( U32 size, U8 align)
 // parameter1 - pointer of buffer's start.
 // parameter2 - old size.
 // parameter3 - new size.
-bool Q::QAllocator::resize(U8* buf, U32 oldSize, U32 newSize)
+bool Q::QAllocator::resize(U8*& buf, U32 oldSize, U32 newSize)
 {
 	U8* newBuff = (U8*)malloc(newSize);
 	if (newBuff == nullptr)
 		return false;
 
-	for( int i = 0; (i < oldSize || i < newSize); i++ )
+	for( U32 i = 0; (i < oldSize) && (i < newSize); i++ )
 		newBuff[i] = buf[i];
 
 	free(buf);

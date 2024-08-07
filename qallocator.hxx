@@ -53,23 +53,26 @@ namespace Q
 
 		U32 _currentDescriptor;
 		
-		struct treenode* nil;	// nil-treenode
-					// 	  
-					//  ______
-					//  |	  |
-					//  |	 nil
-					//  |	   
-					//  |
-					//  |_____
-					//        |
-					//        V
-					//       root     
-					//      /    \
-					//     X      X   
-					//    / \    / \
-					//   X   X    X  nil
-					//  /\   /\   /\
-					//  nil  nil  nil    
+		struct treenode* nil;	
+		/*
+			nil-treenode
+			 	  
+			   _______
+			  |	  |
+			  |	 nil
+			  |	   
+			  |
+			  |_____
+			        |
+			        V
+			       root     
+			      /    \
+			     X      X   
+			    / \    / \
+			   X   X    X  nil
+			  /\   /\   /\
+			  nil  nil  nil    
+		*/
 
 		// ~~~POINTERS~~~
 		
@@ -100,8 +103,8 @@ namespace Q
 		// parameter1 - pointer of buffer's start.
 		// parameter2 - old size.
 		// parameter3 - new size.
-		bool resize(U8*, U32, U32);
-
+		bool resize(U8*&, U32, U32);
+		
 	public:
 		// constructors
 		QAllocator( U32 = DEFAULT_DATA_BUFFER_SIZE, U32 = DEFAULT_TREE_TABLE_SIZE );
@@ -114,7 +117,7 @@ namespace Q
 
 		void DEBUG_print_tree_table()
 		{
-			for(int i = 0; i < _treeCapacity; i++)
+			for(U32 i = 0; i < _treeCapacity; i++)
 			{	
 				if (i != 0 && i % sizeof(struct treenode) == 0)
 					std::cout << '\n';

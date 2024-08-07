@@ -2,19 +2,15 @@
 
 #include "qallocator.hxx"
 
+void* align_of_address(void* address, U8 align);
+
 int main(int argc, char** argv)
 {
-	Q::QAllocator qalloc;
-	std::cout << "1 TABLE : \n";
-	qalloc.DEBUG_print_tree_table();
-	qalloc.allocate(64, 8);
-	std::cout << "2 TABLE : \n";
-	qalloc.DEBUG_print_tree_table();
-	qalloc.allocate(4096, 16);
-	std::cout << "3 TABLE : \n";
-	qalloc.DEBUG_print_tree_table();
-	qalloc.allocate(2048, 32);
-	std::cout << "4 TABLE : \n";
-	qalloc.DEBUG_print_tree_table();
+	//Q::QAllocator qalloc;
+	U64 n = 117;
+	std::cout << n << ' ';
+	U64 m = (U64)align_of_address((void*)n, 8);
+	std::cout << m << '\n';
+
 	return 0;
 }
