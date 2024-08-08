@@ -3,6 +3,18 @@
 #include "qallocator.hxx"
 
 // ~~~ADDITIONAL FUNCTIONS AND METHODS~~~
+// copy N bytes from one buffer to another buffer.
+void copy_data(void* fromBuffer, void* toBuffer, U32 bytes)
+{
+	U8* from = (U8*)fromBuffer;
+	U8* to	 = (U8*)toBuffer;
+
+	for (U32 i = 0; i < bytes; i++)
+	{
+		to[i] = from[i];
+	}
+}
+
 // get grandparent of treenode.
 struct Q::QAllocator::treenode* Q::QAllocator::grandparent(struct Q::QAllocator::treenode* node)
 {
@@ -77,6 +89,31 @@ void Q::QAllocator::rotate_right(struct Q::QAllocator::treenode* node)
 	pivot->right = node;
 }
 
+// DRY principles идут нахуй. Срочно переделать.
+// {
+struct Q::QAllocator::treenode* Q::QAllocator::find_min_treenode(struct Q::QAllocator::treenode* node)
+{
+	struct treenode* next = node->left;
+	while(next != nil)
+	{
+		node = next;
+		next = next->left;
+	}
+	return node;	
+}
+
+struct Q::QAllocator::treenode* Q::QAllocator::Iterator::find_min_treenode(struct Q::QAllocator::treenode* node)
+{
+	struct treenode* next = node->left;
+	while(next != _nil)
+	{
+		node = next;
+		next = next->left;
+	}
+	return node;
+}
+// }
+
 // get aligned address.
 void* align_of_address(void* address, U8 align)
 {
@@ -85,6 +122,64 @@ void* align_of_address(void* address, U8 align)
 	if (mask == 0)
 		return address;
 	return (void*)(addr + (align - mask));
+}
+
+// CLASS ITERATOR:
+// constructor of class Iterator.
+Q::QAllocator::Iterator::Iterator(struct treenode* nd, struct treenode* nl) : _node(nd), _nil(nl) {}
+
+// get iterator's node.
+struct Q::QAllocator::treenode* Q::QAllocator::Iterator::operator*()
+{
+	return _node;
+}
+
+// prefix ++ operator.
+Q::QAllocator::Iterator& Q::QAllocator::Iterator::operator++()
+{
+	if (_node->right != _nil)
+		_node = find_min_treenode(_node->right);
+	else
+	{
+		struct treenode* parent = _node->parent;
+		while (parent != _nil && _node == parent->right)
+		{
+			_node 	= parent;
+			parent 	= parent->parent;
+		}
+		_node = parent;
+	}
+	return *this;
+}
+
+// postfix ++ operator.
+Q::QAllocator::Iterator Q::QAllocator::Iterator::operator++(int)
+{
+	Iterator copy = *this;
+	++(*this);
+	return copy;
+}
+
+bool Q::QAllocator::Iterator::operator==(const Q::QAllocator::Iterator& other)
+{
+	return (this->_node == other._node);
+}
+
+bool Q::QAllocator::Iterator::operator!=(const Q::QAllocator::Iterator& other)
+{
+	return !(*this == other);
+}
+
+// get iterator to start of TREE.
+Q::QAllocator::Iterator Q::QAllocator::begin()
+{
+	return Iterator(find_min_treenode(nil->parent), nil);
+}
+
+// get iterator to end of TREE.
+Q::QAllocator::Iterator Q::QAllocator::end()
+{
+	return Iterator(nil, nil);
 }
 
 // constructor.
@@ -117,6 +212,7 @@ void Q::QAllocator::initBuffers(U32 dataCapacity, U32 treeCapacity)
 	nil->parent 	= nil;
 	nil->descriptor = 0;
 	nil->size 	= 0;
+	nil->align	= 0;
 	nil->isRed	= false;
 	nil->segment 	= nullptr;
 	nil->usefulData	= nullptr;
@@ -174,6 +270,7 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 		nil->parent     = nil;
 		nil->descriptor = 0;
 		nil->size       = 0;
+		nil->align	= 0;
 		nil->isRed      = false;
 		nil->segment    = nullptr;
 		nil->usefulData = nullptr;
@@ -308,6 +405,8 @@ U32 Q::QAllocator::allocate( U32 size, U8 align)
 	if (!node)
 		return 0;
 
+	node->align = align;
+
 	/*
 		structure variables below:
 		 _______________________    ________________
@@ -354,13 +453,34 @@ bool Q::QAllocator::resize_data_buffer(U32 newSize)
 	
 	// memorize old buffer.
 	U8* oldBuff = _dataBuffer;
-	void* oldCurrentDataBufferPosition = _currentDataBufferPosition;
+	//void* oldCurrentDataBufferPosition = _currentDataBufferPosition;
 	// create new buffer.
 	_dataBuffer = (U8*)malloc(newSize);
 	_currentDataBufferPosition = _dataBuffer;
 
-	
+	// copy all data from old buffer to new.
+	Iterator beg = begin();
+	Iterator e = end();
+	while(beg != e)
+	{
+		struct treenode* node = *beg;
+		std::cout << node->descriptor << '\n';
+		void* segment = _currentDataBufferPosition;
+		void* aligned = align_of_address(segment, node->align);
 
+		U32 alignDifference = (integer_value_of_pointer)node->usefulData - (integer_value_of_pointer)node->segment;
+		U32 size = node->size - alignDifference;
+		copy_data(node->usefulData, aligned, size);
+
+		node->size 		= size + (integer_value_of_pointer)aligned - (integer_value_of_pointer)segment;
+		node->segment		= segment;
+		node->usefulData	= aligned;
+
+		_currentDataBufferPosition = (void*)((integer_value_of_pointer)aligned + size);
+		++beg;
+	}
+	_dataCapacity = newSize;
+	free(oldBuff);
 	return true;
 }
 

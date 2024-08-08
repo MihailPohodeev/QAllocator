@@ -18,23 +18,24 @@ namespace Q
 		// multithread-nesessary dependencies.
 		mutable std::mutex m;
 		
-		// node of RBT for efficient searching pointer by descriptor
+		// node of RBT for efficient searching pointer by descriptor.
 		struct treenode
 		{
-			struct treenode* parent;	// pointer to parent of node
-			U32 descriptor;			// descriptor of segment
-			U32 size;			// size of segment
-			bool isRed;			// Indicator of color (Red/Black)
-			void* segment;			// pointer to segment of memory
-			void* usefulData;		// pointer to useful data (segment-pointer + align)
-			struct treenode *left, *right;	// pointer to left and right
+			struct treenode* parent;	// pointer to parent of node.
+			U32 descriptor;			// descriptor of segment.
+			U32 size;			// size of segment.
+			U8 align;			// align data.
+			bool isRed;			// Indicator of color (Red/Black).
+			void* segment;			// pointer to segment of memory.
+			void* usefulData;		// pointer to useful data (segment-pointer + align).
+			struct treenode *left, *right;	// pointer to left and right.
 		};
 
-		U32 _dataCapacity;	// capacity of buffer
-		U32 _treeCapacity;	// capacity of table with descriptors
+		U32 _dataCapacity;	// capacity of buffer.
+		U32 _treeCapacity;	// capacity of table with descriptors.
 
-		U8* _dataBuffer;	// pointer to data buffer
-		U8* _treeBuffer;	// pointer to table with descriptors
+		U8* _dataBuffer;	// pointer to data buffer.
+		U8* _treeBuffer;	// pointer to table with descriptors.
 
 		//	DATA-BUFFER
 		//	 ____________________________________________________
@@ -98,10 +99,33 @@ namespace Q
 		struct treenode* uncle(struct treenode*);		// find uncle of treenode.
 		void rotate_left(struct treenode*);			// rotate left of node.
 		void rotate_right(struct treenode*);			// rotate right of node.
+		struct treenode* find_min_treenode(struct treenode*);	// find node with min descriptor in tree (arg = root).
 
 		// resize data buffer
 		// parameter1 - new size.
 		bool resize_data_buffer(U32);
+
+		// Iterator class for RTB(TREE-TABLE).
+		class Iterator
+		{
+			struct treenode* _node;					// current node.
+			struct treenode* _nil;					// nil node.
+			struct treenode* find_min_treenode(struct treenode*);	// find node with min descriptor in tree(arg = root).
+		public:
+			Iterator(struct treenode*, struct treenode*);
+			struct treenode* operator*();
+			Iterator& operator++();
+			Iterator operator++(int);
+			bool operator==(const Iterator&);
+			bool operator!=(const Iterator&);
+		};
+
+		Iterator begin();
+		Iterator end();
+
+		// operators
+		QAllocator operator=(const QAllocator&) = delete;
+		QAllocator operator=(QAllocator&&) = delete;
 		
 	public:
 		// constructors
@@ -120,6 +144,17 @@ namespace Q
 				if (i != 0 && i % sizeof(struct treenode) == 0)
 					std::cout << '\n';
 				std::cout << (int)(_treeBuffer[i]) << ' ';
+			}
+			std::cout << '\n';
+		}
+
+		void DEBUG_print_tree_values()
+		{
+			Iterator beg = begin();
+			while (beg != end())
+			{
+				std::cout << (*beg)->descriptor << ' ';
+				++beg;
 			}
 			std::cout << '\n';
 		}
