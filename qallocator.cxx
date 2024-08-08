@@ -77,18 +77,23 @@ void Q::QAllocator::rotate_right(struct Q::QAllocator::treenode* node)
 	pivot->right = node;
 }
 
-// get aligned address
+// get aligned address.
 void* align_of_address(void* address, U8 align)
 {
 	integer_value_of_pointer addr = (integer_value_of_pointer)address;
-	return (void*)(addr + (align - (addr & (align - 1))));
+	U8 mask = addr & (align - 1);
+	if (mask == 0)
+		return address;
+	return (void*)(addr + (align - mask));
 }
 
+// constructor.
 Q::QAllocator::QAllocator(U32 dataCapacity, U32 treeCapacity) : _dataCapacity(dataCapacity), _treeCapacity(treeCapacity)
 {
 	initBuffers(dataCapacity, treeCapacity);
 }
 
+// destructor.
 Q::QAllocator::~QAllocator()
 {
 	free(_dataBuffer);
@@ -101,10 +106,11 @@ void Q::QAllocator::initBuffers(U32 dataCapacity, U32 treeCapacity)
 	_treeBuffer = (U8*)malloc(treeCapacity);
 	
 	// set current pointer to _treeBuffer start + align.
-	_currentTreeTablePosition = _treeBuffer;
+	_currentTreeTablePosition  = align_of_address(_treeBuffer, 8);
+	// set current pointer to _dataBuffer.
+	_currentDataBufferPosition = _dataBuffer;
 
-	// align pointer by 8 bytes.
-	_currentTreeTablePosition = align_of_address(_currentTreeTablePosition, 8);
+	// allocate memory for nil_node.
 	nil = allocate_treenode_in_buffer();
 
 	// set nil-treenode.
@@ -192,16 +198,15 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 // add treenode with descriptor from parameter to tree and balance tree.
 struct Q::QAllocator::treenode* Q::QAllocator::add_node_in_tree( U32 descriptor )
 {
-	std::cout << "start !\n";
 	struct treenode* node = allocate_treenode_in_buffer();
-	std::cout << _treeCapacity << '\n';
 	if (!node)
 		return nullptr;
 	node->descriptor = descriptor;
 	node->left 	 = nil;
 	node->right	 = nil;
 	node->isRed	 = true;
-
+	
+	// if inserting node is root.
 	if (nil->parent == nil)
 	{
 		nil->parent  = node;
@@ -209,6 +214,7 @@ struct Q::QAllocator::treenode* Q::QAllocator::add_node_in_tree( U32 descriptor 
 	}
 	else
 	{
+		// insert node in end of tree and balance it.
 		struct treenode* curr = nil->parent;
 		while(1)
 		{
@@ -291,36 +297,76 @@ void Q::QAllocator::balance_tree_insertion(struct treenode* node)
 // allocate memory and return descriptor ( U32 ).
 U32 Q::QAllocator::allocate( U32 size, U8 align)
 {
+	// result node.
 	struct treenode* node = add_node_in_tree(_currentDescriptor);
+	// if memory allocation for treenode was fault.
 	if (!node)
 		return 0;
-	node->size = size;
+
+	/*
+		structure variables below:
+		 _______________________    ________________
+		| T1  |T2|     T3     |  ...  | TN - 1 |    |  |
+		|_____|__|____________|_    __|________|____|  |
+		A				       A    A  A
+		|___start of data buffer	       |    |  |
+						       |    |  |
+		current (_currentDataBufferPosition)___|    |  |
+						            |  |
+				end of data buffer__________|  |
+							       |
+		current + alignDifference + size_______________|
+			  	  ||
+		current    +	realSize
+
+	*/
+
+	void* current = _currentDataBufferPosition;
+	void* aligned = align_of_address(current, align);
+	U32 alignDifference = (integer_value_of_pointer)aligned - (integer_value_of_pointer)current;
+	U32 realSize = size + alignDifference;
+
+	if ((integer_value_of_pointer)current + realSize > (integer_value_of_pointer)_dataBuffer + _dataCapacity)
+		resize_data_buffer(_dataCapacity * 2);
+
+	node->segment 	 = current;
+	node->usefulData = aligned;
+	node->size	 = realSize;
+
+	_currentDataBufferPosition = (void*)((integer_value_of_pointer)_currentDataBufferPosition + realSize);
 
 	_currentDescriptor++;
 
 	return node->descriptor;
 }
 
-// resize buffer
+// resize buffer.
 // parameter1 - pointer of buffer's start.
 // parameter2 - old size.
 // parameter3 - new size.
-bool Q::QAllocator::resize(U8*& buf, U32 oldSize, U32 newSize)
+bool Q::QAllocator::resize_data_buffer(U32 newSize)
 {
-	U8* newBuff = (U8*)malloc(newSize);
-	if (newBuff == nullptr)
-		return false;
-
-	for( U32 i = 0; (i < oldSize) && (i < newSize); i++ )
-		newBuff[i] = buf[i];
-
-	free(buf);
-	buf = newBuff;
-	return true;
+	return false;
 }
 
+// get pointer of descriptor
+void* Q::QAllocator::get_pointer(U32 descriptor)
+{
+	struct treenode* node = nil->parent;
+	
+	if (node == nil)
+		return nullptr;
 
-
-
-
-
+	while(1)
+	{
+		if (node == nil)
+			return nullptr;
+		if (descriptor == node->descriptor)
+			return node->usefulData;
+		if (descriptor > node->descriptor)
+			node = node->right;
+		else
+			node = node->left;
+	}
+	return nullptr;
+}

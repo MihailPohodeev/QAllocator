@@ -99,11 +99,9 @@ namespace Q
 		void rotate_left(struct treenode*);			// rotate left of node.
 		void rotate_right(struct treenode*);			// rotate right of node.
 
-		// resize buffer
-		// parameter1 - pointer of buffer's start.
-		// parameter2 - old size.
-		// parameter3 - new size.
-		bool resize(U8*&, U32, U32);
+		// resize data buffer
+		// parameter1 - new size.
+		bool resize_data_buffer(U32);
 		
 	public:
 		// constructors
@@ -125,10 +123,19 @@ namespace Q
 			}
 			std::cout << '\n';
 		}
+
+		void DEBUG_print_data_buffer()
+		{
+			for (U32 i = 0; i < _dataCapacity; i++)
+			{
+				std::cout << (int)(_dataBuffer[i]) << ' ';
+			}
+			std::cout << '\n';
+		}
 		// allocate memory and return descriptor ( U32 ).
 		// parameter1 - size of segment;
 		// parameter2 - align
-		U32 allocate( U32, U8 );
+		U32 allocate( U32, U8 = 8 );
 		// get descriptor ( U32 ) and deallocate memory.
 		void deallocate( U32 );
 		// defragmentate some segments in data heap.
@@ -136,6 +143,7 @@ namespace Q
 		// defragmentate all segments.
 		bool defragmentation();
 		// get descriptor ( U32 ) and return pointer.
+		// parameter1 - descriptor.
 		void* get_pointer( U32 );
 	};
 }
