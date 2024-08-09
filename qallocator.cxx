@@ -15,6 +15,13 @@ void copy_data(void* fromBuffer, void* toBuffer, U32 bytes)
 	}
 }
 
+void bzero(void* buffer, U32 size)
+{
+	U8* buf = (U8*)buffer;
+	for (U32 i = 0; i < size; i++)
+		buf[i] = 0;
+}
+
 // get grandparent of treenode.
 struct Q::QAllocator::treenode* Q::QAllocator::grandparent(struct Q::QAllocator::treenode* node)
 {
@@ -198,6 +205,7 @@ Q::QAllocator::~QAllocator()
 void Q::QAllocator::initBuffers(U32 dataCapacity, U32 treeCapacity)
 {
 	_dataBuffer = (U8*)malloc(dataCapacity);
+	bzero(_dataBuffer, dataCapacity);
 	_treeBuffer = (U8*)malloc(treeCapacity);
 	
 	// set current pointer to _treeBuffer start + align.
@@ -238,6 +246,7 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 	if (((integer_value_of_pointer)_currentTreeTablePosition + sizeof(struct treenode)) > \
 			((integer_value_of_pointer)_treeBuffer + _treeCapacity))
 	{
+		std::cout << "RESIZE TREE TABLE !\n";
 		// ~~~Rebuilding RBTree from old buffer~~~
 		// allocate new x2 buffer.
 		U8* newBuff = (U8*)malloc(_treeCapacity * 2);
@@ -284,6 +293,7 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 			struct treenode* oldNode = (struct treenode*)i;
 			struct treenode* newNode = add_node_in_tree(oldNode->descriptor);
 			newNode->size 		 = oldNode->size;
+			newNode->align		 = oldNode->align;
 			newNode->segment 	 = oldNode->segment;
 			newNode->usefulData	 = oldNode->usefulData;
 		}
@@ -366,7 +376,7 @@ void Q::QAllocator::balance_tree_insertion(struct treenode* node)
 		return;
 	}
 	struct treenode* u = uncle(node);
-	if ((u == nullptr) && (u->isRed))
+	if ((u != nullptr) && (u->isRed))
 	{
 		node->parent->isRed = false;
 		u->isRed = false;
@@ -431,7 +441,13 @@ U32 Q::QAllocator::allocate( U32 size, U8 align)
 	U32 realSize = size + alignDifference;
 
 	if ((integer_value_of_pointer)current + realSize > (integer_value_of_pointer)_dataBuffer + _dataCapacity)
-		resize_data_buffer(_dataCapacity * 2);
+	{
+		std::cout << "RESIZE DATA ! capacity : " << _dataCapacity << '\n';
+		DEBUG_print_data_buffer();
+		U64 max = _dataCapacity * 2;
+		max = max > _dataCapacity + realSize ? max : (_dataCapacity + realSize) * 1.5f;
+		resize_data_buffer(max);
+	}
 
 	node->segment 	 = current;
 	node->usefulData = aligned;
@@ -456,15 +472,36 @@ bool Q::QAllocator::resize_data_buffer(U32 newSize)
 	//void* oldCurrentDataBufferPosition = _currentDataBufferPosition;
 	// create new buffer.
 	_dataBuffer = (U8*)malloc(newSize);
+	bzero(_dataBuffer, newSize);
 	_currentDataBufferPosition = _dataBuffer;
 
 	// copy all data from old buffer to new.
+	/*
+	 * We bypass the RBT and replace data-segments from old buffer to new
+	 *	nil
+	 *	 V
+	 *	root
+	 *	/ \
+	 *     X   X
+	 *    /\   /\
+	 *   ...   ...
+	 *
+	 * 	Old Buffer : 
+	 * 	 __________
+	 * 	| T1 | ...
+	 * 	|____|_____
+	 *
+	 * 	New Buffer :*
+	 * 	 ___________
+	 * 	| T1 | ...
+	 * 	|____|______ 
+	 *
+	*/
 	Iterator beg = begin();
 	Iterator e = end();
 	while(beg != e)
 	{
 		struct treenode* node = *beg;
-		std::cout << node->descriptor << '\n';
 		void* segment = _currentDataBufferPosition;
 		void* aligned = align_of_address(segment, node->align);
 

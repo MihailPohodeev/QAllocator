@@ -47,7 +47,7 @@ namespace Q
 		//
 		//	TREE-TABLE
 		//	 ____________________________________________________
-		//	| nil | T1  |  T2 | T3  |  T4 | T5  |  	  FREE       |
+		//	| nil | T1  |  T2 | T3  |  T4 | T5  |	    FREE     |
 		//	|_____|_____|_____|_____|_____|_____|________________|
 		//
 		//	There are 6 treenodes(5 descriptors + 1 nil-node) in buffer.
@@ -135,6 +135,24 @@ namespace Q
 		int DEBUG_get_treenode_size() const
 		{
 			return sizeof(struct treenode);
+		}
+
+		void printTree(struct treenode* root, int space = 0, int height = 10) const
+		{
+			if (root == nil)
+				return;
+			space += height;
+			printTree(root->right, space);
+			std::cout << std::endl;
+			for (int i = height; i < space; i++)
+				std::cout << " ";
+			std::cout << root->descriptor << (root->isRed ? 'R' : 'B') << "\n";
+			printTree(root->left, space);
+		}
+
+		void DEBUG_print_tree() const
+		{
+			printTree(nil->parent);
 		}
 
 		void DEBUG_print_tree_table()
