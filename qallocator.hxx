@@ -18,6 +18,9 @@ namespace Q
 		// multithread-nesessary dependencies.
 		mutable std::mutex m;
 
+		// is DATA-BUFFER fragmented?
+		bool isFragmented;
+
 		// node of RBT for efficient searching pointer by descriptor.
 		struct treenode
 		{
@@ -213,9 +216,9 @@ namespace Q
 		// get descriptor ( U32 ) and deallocate memory.
 		void deallocate( descriptor_t );
 		// defragmentate some segments in data heap.
-		bool some_defragmentation( U16 );
+		void some_defragmentation( U64 );
 		// defragmentate all segments.
-		bool defragmentation();
+		void defragmentation();
 		// get descriptor ( U32 ) and return pointer.
 		// parameter1 - descriptor.
 		void* get_pointer( descriptor_t );

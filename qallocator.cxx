@@ -288,6 +288,7 @@ void Q::QAllocator::initBuffers(U32 dataCapacity, U32 treeCapacity)
 	nil->right	= nil;
 
 	_currentDescriptor = 1;
+	isFragmented = false;
 }
 
 // allocate memory in TREE-TABLE for treenode.
@@ -470,6 +471,9 @@ void Q::QAllocator::remove_node_in_tree(descriptor_t descriptor)
 
 	if (node == nil)
 		return;
+	
+	if (node != find_max_treenode(nil->parent))
+		isFragmented = true;
 
 	// find minimal element in right subtree where node - root;
 	struct treenode* M = find_max_treenode(node->left);
@@ -765,6 +769,7 @@ bool Q::QAllocator::resize_data_buffer(U32 newSize)
 		++beg;
 	}
 	_dataCapacity = newSize;
+	isFragmented = false;
 	free(oldBuff);
 	return true;
 }
@@ -776,4 +781,50 @@ void* Q::QAllocator::get_pointer(descriptor_t descriptor)
 	if (node == nil)
 		return nullptr;
 	return node->usefulData;
+}
+
+// defragmentate some segments of memory.
+void Q::QAllocator::some_defragmentation(U64 count)
+{
+	// if data isn't fragmented -> we don't need defragmentate it.
+	if (!isFragmented)
+		return;
+	
+	U64 counter = 0;
+
+	void* previousEnd = _dataBuffer;
+
+	Iterator beg = begin();
+	Iterator e	 = end();
+	while(counter < count && beg != e)
+	{
+		struct treenode* current = (*beg);
+		std::cout << current->descriptor << ' ';
+		void* curSeg = current->segment;
+		if (previousEnd != curSeg)
+		{
+			void* newUsefulData = align_of_address(previousEnd, current->align);
+			U32 alignDifference = (integer_value_of_pointer)current->usefulData - (integer_value_of_pointer)current->segment;
+			U32 size 			= current->size - alignDifference;
+			copy_data(current->usefulData, newUsefulData, size);
+			std::cout << "copied " << size << " bytes !\n";
+			current->segment 	= previousEnd;
+			current->usefulData	= newUsefulData;
+			alignDifference 	= (integer_value_of_pointer)newUsefulData - (integer_value_of_pointer)previousEnd;
+			current->size		= size + alignDifference;
+
+			counter++;
+		}
+
+		previousEnd = (void*)((integer_value_of_pointer)previousEnd + current->size);
+		++beg;
+	}
+	if (beg == e)
+		isFragmented = false;
+}
+
+// defragmentate all segments.
+void Q::QAllocator::defragmentation()
+{
+	some_defragmentation(UINT64_MAX);
 }
