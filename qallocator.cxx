@@ -15,6 +15,14 @@ void copy_data(void* fromBuffer, void* toBuffer, U32 bytes)
 	}
 }
 
+template <typename T>
+void swap(T& a, T& b)
+{
+	T temp = a;
+	a = b;
+	b = temp;
+}
+
 void bzero(void* buffer, U32 size)
 {
 	U8* buf = (U8*)buffer;
@@ -46,6 +54,17 @@ struct Q::QAllocator::treenode* Q::QAllocator::uncle(struct Q::QAllocator::treen
 	else if (node == node->parent->right)
 		return node->parent->left;
 	return nullptr;
+}
+
+// get sibling of treenode.
+struct Q::QAllocator::treenode* Q::QAllocator::sibling(struct Q::QAllocator::treenode* node)
+{
+	if (node->parent == nil)
+		return nullptr;
+	if (node == node->parent->right)
+		return node->parent->left;
+	else
+		return node->parent->right;
 }
 
 // rotate left for treenode
@@ -85,7 +104,7 @@ void Q::QAllocator::rotate_right(struct Q::QAllocator::treenode* node)
 		else
 			node->parent->right = pivot;
 	}
-	else 
+	else
 		nil->parent = pivot;
 
 	node->right = pivot->right;
@@ -96,21 +115,62 @@ void Q::QAllocator::rotate_right(struct Q::QAllocator::treenode* node)
 	pivot->right = node;
 }
 
-// DRY principles идут нахуй. Срочно переделать.
+// find a treenode by descriptor
+struct Q::QAllocator::treenode* Q::QAllocator::find(descriptor_t descriptor)
+{
+	struct treenode* node = nil->parent;
+	while(1)
+	{
+		if (node == nil)
+			return nil;
+		if (node->descriptor == descriptor)
+			return node;
+		if (descriptor > node->descriptor)
+		{
+			node = node->right;
+			continue;
+		}
+		else
+		{
+			node = node->left;
+			continue;
+		}
+	}
+	return nil;
+}
+
+struct Q::QAllocator::treenode* Q::QAllocator::find_max_treenode(struct treenode* node)
+{
+	if (node == nil)
+		return nil;
+	struct treenode* next = node->right;
+	while(next != nil)
+	{
+		node = next;
+		next = next->right;
+	}
+	return node;
+}
+
+// DRY principles не выполнены. Срочно переделать.
 // {
 struct Q::QAllocator::treenode* Q::QAllocator::find_min_treenode(struct Q::QAllocator::treenode* node)
 {
+	if (node == nil)
+		return nil;
 	struct treenode* next = node->left;
 	while(next != nil)
 	{
 		node = next;
 		next = next->left;
 	}
-	return node;	
+	return node;
 }
 
 struct Q::QAllocator::treenode* Q::QAllocator::Iterator::find_min_treenode(struct Q::QAllocator::treenode* node)
 {
+	if (node == _nil)
+		return _nil;
 	struct treenode* next = node->left;
 	while(next != _nil)
 	{
@@ -207,7 +267,7 @@ void Q::QAllocator::initBuffers(U32 dataCapacity, U32 treeCapacity)
 	_dataBuffer = (U8*)malloc(dataCapacity);
 	bzero(_dataBuffer, dataCapacity);
 	_treeBuffer = (U8*)malloc(treeCapacity);
-	
+
 	// set current pointer to _treeBuffer start + align.
 	_currentTreeTablePosition  = align_of_address(_treeBuffer, 8);
 	// set current pointer to _dataBuffer.
@@ -240,8 +300,7 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 	 	 _____|_______|_______|_______|__|    |
 	 	                                 A    A
 	                   end of buffer-------|    |
-	    here pointer out of TREE-TABLE --------- 
-	     
+	    here pointer out of TREE-TABLE ---------
 	*/
 	if (((integer_value_of_pointer)_currentTreeTablePosition + sizeof(struct treenode)) > \
 			((integer_value_of_pointer)_treeBuffer + _treeCapacity))
@@ -256,7 +315,7 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 		U8* temp = newBuff;
 		newBuff = _treeBuffer;
 		_treeBuffer = temp;
-		
+
 		/*
 		 sturcture of variables below.
 			 ______________________________       __________________
@@ -285,7 +344,7 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 		nil->usefulData = nullptr;
 		nil->left       = nil;
 		nil->right      = nil;
-		
+
 		// get descriptors from old buffer -> build new tree -> in the corresponding treenode put values from old treenode.
 		for ( integer_value_of_pointer i = (integer_value_of_pointer)_oldBufferStart; \
 			i < (integer_value_of_pointer)_oldCurrentTreeTablePosition; i += sizeof(struct treenode) )
@@ -297,7 +356,7 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 			newNode->segment 	 = oldNode->segment;
 			newNode->usefulData	 = oldNode->usefulData;
 		}
-		
+
 		// change capacity of TREE-TABLE.
 		_treeCapacity *= 2;
 		free(newBuff);
@@ -307,8 +366,39 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 	return result;
 }
 
+// deallocate memory in TREE-TABLE.
+// parameter1 - treenode.
+void Q::QAllocator::deallocate_treenode_in_buffer(struct treenode* node)
+{
+	struct treenode* last = (struct treenode*)((integer_value_of_pointer)_currentTreeTablePosition - sizeof(struct treenode));
+	*node = *last;
+	bzero(last, sizeof(struct treenode));
+
+	if (node != last)
+	{
+		if (node->right != nil)
+			node->right->parent = node;
+		if (node->left != nil)
+			node->left->parent = node;
+
+		if (node->parent == nil)
+			nil->parent = node;
+		else
+		{
+			if (node->parent->right == last)
+				node->parent->right = node;
+			else
+				node->parent->left = node;
+		}
+	}
+
+	_currentTreeTablePosition = (void*)((integer_value_of_pointer)_currentTreeTablePosition - sizeof(struct treenode));
+
+	
+}
+
 // add treenode with descriptor from parameter to tree and balance tree.
-struct Q::QAllocator::treenode* Q::QAllocator::add_node_in_tree( U32 descriptor )
+struct Q::QAllocator::treenode* Q::QAllocator::add_node_in_tree( descriptor_t descriptor )
 {
 	struct treenode* node = allocate_treenode_in_buffer();
 	if (!node)
@@ -317,7 +407,7 @@ struct Q::QAllocator::treenode* Q::QAllocator::add_node_in_tree( U32 descriptor 
 	node->left 	 = nil;
 	node->right	 = nil;
 	node->isRed	 = true;
-	
+
 	// if inserting node is root.
 	if (nil->parent == nil)
 	{
@@ -362,6 +452,85 @@ struct Q::QAllocator::treenode* Q::QAllocator::add_node_in_tree( U32 descriptor 
 	return node;
 }
 
+// remove treenode in tree.
+// parameter1 - treenode.
+void Q::QAllocator::remove_node_in_tree(descriptor_t descriptor)
+{
+	// find treenode with descriptor in tree;
+	struct treenode* node = find(descriptor);
+
+	if (node == nil)
+		return;
+
+	// find minimal element in right subtree where node - root;
+	struct treenode* M = find_max_treenode(node->left);
+	M = (M != nil ? M : node);
+
+	std::cout << M->descriptor << '\n';
+
+	if (M != node)
+	{
+		node->descriptor = M->descriptor;
+		node->size 		 = M->size;
+		node->align 	 = M->align;
+		node->segment 	 = M->segment;
+		node->usefulData = M->usefulData;
+		/*
+		swap(node->descriptor, maxRight->descriptor);
+		swap(node->size, maxRight->size);
+		swap(node->align, maxRight->align);
+		swap(node->segment, maxRight->segment);
+		swap(node->usefulData, maxRight->usefulData);
+		*/
+	}
+	// get not-nil subtree of node M;
+	struct treenode* N = (M->right != nil ? M->right : M->left);
+
+	// if M hasn't children;
+	if (N == nil)
+	{
+		if (M->parent == nil)
+		{
+			deallocate_treenode_in_buffer(M);
+			return;
+		}
+//		if (M == M->parent->right)
+//			M->parent->right = nil;
+//		else
+//			M->parent->left = nil;
+		N = M;
+	}
+	else
+	{
+		// set N instead M.
+		N->parent = M->parent;
+		if (M->parent == nil)
+			nil->parent = N;
+		else
+		{
+			if (M == M->parent->right)
+				M->parent->right = N;
+			else
+				M->parent->left  = N;
+		}
+	}
+	if (!M->isRed)
+	{
+		if (!N->isRed)
+			balance_tree_removing(N);
+		else
+			N->isRed = false;
+	}
+	if (N == M)
+	{
+		if (M->parent->right == M)
+			M->parent->right = nil;
+		else if (M->parent->left == M)
+			M->parent->left = nil;
+	}
+	deallocate_treenode_in_buffer(M);
+}
+
 // after adding treenode in tree -> balance tree, starts param.
 // parameter1 - treenode - start for balancing.
 void Q::QAllocator::balance_tree_insertion(struct treenode* node)
@@ -372,9 +541,7 @@ void Q::QAllocator::balance_tree_insertion(struct treenode* node)
 		return;
 	}
 	if (!node->parent->isRed)
-	{
 		return;
-	}
 	struct treenode* u = uncle(node);
 	if ((u != nullptr) && (u->isRed))
 	{
@@ -386,7 +553,7 @@ void Q::QAllocator::balance_tree_insertion(struct treenode* node)
 		return;
 	}
 	struct treenode* g = grandparent(node);
-	
+
 	if ((node == node->parent->right) && (node->parent == g->left))
 	{
 		rotate_left(node->parent);
@@ -406,8 +573,75 @@ void Q::QAllocator::balance_tree_insertion(struct treenode* node)
 		rotate_left(g);
 }
 
+// after removing treenode -> balance tree, starts param.
+// parementer1 - treenode - start for balancing.
+void Q::QAllocator::balance_tree_removing(struct treenode* node)
+{
+	std::cout << "case1\n";
+	if (node->parent == nil)
+		return;
+	std::cout << "case2\n";
+	struct treenode* s = sibling(node);
+	if (s->isRed)
+	{
+		node->parent->isRed = true;
+		s->isRed = false;
+		if (node == node->parent->left)
+			rotate_left(node->parent);
+		else
+			rotate_right(node->parent);
+	}
+	std::cout << "case3\n";
+	s = sibling(node);
+	if ((!node->parent->isRed) && (!s->isRed) && (!s->left->isRed) && (!s->right->isRed))
+	{
+		s->isRed = true;
+		balance_tree_removing(node->parent);
+		return;
+	}
+	std::cout << "case4\n";
+	s = sibling(node);
+	if ((node->parent->isRed) && (!s->isRed) && (!s->left->isRed) && (!s->right->isRed))
+	{
+		s->isRed = true;
+		node->parent->isRed = false;
+		return;
+	}
+	std::cout << "case5\n";
+	if (!s->isRed)
+	{
+		if (node == node->parent->left && !s->right->isRed && s->left->isRed)
+		{
+			s->isRed = true;
+			s->left->isRed = false;
+			rotate_right(s);
+		}
+		else if (node == node->parent->right && !s->left->isRed && s->right->isRed)
+		{
+			s->isRed = true;
+			s->right->isRed = false;
+			rotate_left(s);
+		}
+	}
+	std::cout << "case6\n";
+	s = sibling(node);
+	s->isRed = node->parent->isRed;
+	node->parent->isRed = false;
+
+	if (node == node->parent->left)
+	{
+		s->right->isRed = false;
+		rotate_left(node->parent);
+	}
+	else
+	{
+		s->left->isRed = false;
+		rotate_right(node->parent);
+	}
+}
+
 // allocate memory and return descriptor ( U32 ).
-U32 Q::QAllocator::allocate( U32 size, U8 align)
+descriptor_t Q::QAllocator::allocate( U32 size, U8 align)
 {
 	// result node.
 	struct treenode* node = add_node_in_tree(_currentDescriptor);
@@ -460,13 +694,18 @@ U32 Q::QAllocator::allocate( U32 size, U8 align)
 	return node->descriptor;
 }
 
+void Q::QAllocator::deallocate(descriptor_t descriptor)
+{
+	remove_node_in_tree(descriptor);
+}
+
 // resize buffer.
 // parameter1 - new size.
 bool Q::QAllocator::resize_data_buffer(U32 newSize)
 {
 	if (newSize < _dataCapacity)
 		return false;
-	
+
 	// memorize old buffer.
 	U8* oldBuff = _dataBuffer;
 	//void* oldCurrentDataBufferPosition = _currentDataBufferPosition;
@@ -486,7 +725,7 @@ bool Q::QAllocator::resize_data_buffer(U32 newSize)
 	 *    /\   /\
 	 *   ...   ...
 	 *
-	 * 	Old Buffer : 
+	 * 	Old Buffer :
 	 * 	 __________
 	 * 	| T1 | ...
 	 * 	|____|_____
@@ -494,7 +733,7 @@ bool Q::QAllocator::resize_data_buffer(U32 newSize)
 	 * 	New Buffer :*
 	 * 	 ___________
 	 * 	| T1 | ...
-	 * 	|____|______ 
+	 * 	|____|______
 	 *
 	*/
 	Iterator beg = begin();
@@ -522,23 +761,10 @@ bool Q::QAllocator::resize_data_buffer(U32 newSize)
 }
 
 // get pointer of descriptor
-void* Q::QAllocator::get_pointer(U32 descriptor)
+void* Q::QAllocator::get_pointer(descriptor_t descriptor)
 {
-	struct treenode* node = nil->parent;
-	
+	struct treenode* node = find(descriptor);
 	if (node == nil)
 		return nullptr;
-
-	while(1)
-	{
-		if (node == nil)
-			return nullptr;
-		if (descriptor == node->descriptor)
-			return node->usefulData;
-		if (descriptor > node->descriptor)
-			node = node->right;
-		else
-			node = node->left;
-	}
-	return nullptr;
+	return node->usefulData;
 }

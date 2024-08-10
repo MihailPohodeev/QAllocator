@@ -14,6 +14,9 @@ using I16 = int16_t;
 using I32 = int32_t;
 using I64 = int64_t;
 
+// type for descriptor-value.
+using descriptor_t = U64;
+
 #ifdef POINTER_SIZE_32
 
 using integer_value_of_pointer = U32;
