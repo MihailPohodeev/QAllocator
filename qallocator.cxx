@@ -107,7 +107,7 @@ void Q::QAllocator::rotate_right(struct Q::QAllocator::treenode* node)
 	else
 		nil->parent = pivot;
 
-	node->right = pivot->right;
+	node->left = pivot->right;
 	if (pivot->right != nil)
 		pivot->right->parent = node;
 
@@ -306,15 +306,23 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 			((integer_value_of_pointer)_treeBuffer + _treeCapacity))
 	{
 		std::cout << "RESIZE TREE TABLE !\n";
+		std::cout << "Before : \n";
+		DEBUG_print_tree();
+
 		// ~~~Rebuilding RBTree from old buffer~~~
 		// allocate new x2 buffer.
-		U8* newBuff = (U8*)malloc(_treeCapacity * 2);
-		if (newBuff == nullptr)
+
+		Iterator beg = begin();
+		Iterator e   = end();
+
+		U8* newBuff = _treeBuffer;
+		_treeBuffer = (U8*)malloc(_treeCapacity * 2);
+
+		if (_treeBuffer == nullptr)
+		{
+			_treeBuffer = newBuff;
 			return nullptr;
-		// swap buffers.
-		U8* temp = newBuff;
-		newBuff = _treeBuffer;
-		_treeBuffer = temp;
+		}
 
 		/*
 		 sturcture of variables below.
@@ -330,8 +338,8 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 								buffer end _____|
 		*/
 
-		void* _oldCurrentTreeTablePosition = _currentTreeTablePosition;
-		void* _oldBufferStart = (void*)((integer_value_of_pointer)nil + sizeof(struct treenode));
+//		void* _oldCurrentTreeTablePosition = _currentTreeTablePosition;
+//		void* _oldBufferStart = (void*)((integer_value_of_pointer)nil + sizeof(struct treenode));
 		_currentTreeTablePosition = align_of_address(_treeBuffer, 8);
 		//return nil in buffer.
 		nil = allocate_treenode_in_buffer();
@@ -346,21 +354,24 @@ struct Q::QAllocator::treenode* Q::QAllocator::allocate_treenode_in_buffer()
 		nil->right      = nil;
 
 		// get descriptors from old buffer -> build new tree -> in the corresponding treenode put values from old treenode.
-		for ( integer_value_of_pointer i = (integer_value_of_pointer)_oldBufferStart; \
-			i < (integer_value_of_pointer)_oldCurrentTreeTablePosition; i += sizeof(struct treenode) )
+		while(beg != e)
 		{
-			struct treenode* oldNode = (struct treenode*)i;
-			struct treenode* newNode = add_node_in_tree(oldNode->descriptor);
-			newNode->size 		 = oldNode->size;
-			newNode->align		 = oldNode->align;
-			newNode->segment 	 = oldNode->segment;
-			newNode->usefulData	 = oldNode->usefulData;
+			struct treenode* newNode = add_node_in_tree((*beg)->descriptor);
+			newNode->size 		= (*beg)->size;
+			newNode->align 		= (*beg)->align;
+			newNode->segment 	= (*beg)->segment;
+			newNode->usefulData 	= (*beg)->usefulData;
+			++beg;
 		}
 
 		// change capacity of TREE-TABLE.
 		_treeCapacity *= 2;
 		free(newBuff);
+
+		std::cout << "after : \n";
+		DEBUG_print_tree();
 	}
+
 	struct treenode* result = (struct treenode*)_currentTreeTablePosition;
 	_currentTreeTablePosition = (void*)((integer_value_of_pointer)_currentTreeTablePosition + sizeof(struct treenode));
 	return result;
@@ -393,8 +404,6 @@ void Q::QAllocator::deallocate_treenode_in_buffer(struct treenode* node)
 	}
 
 	_currentTreeTablePosition = (void*)((integer_value_of_pointer)_currentTreeTablePosition - sizeof(struct treenode));
-
-	
 }
 
 // add treenode with descriptor from parameter to tree and balance tree.
